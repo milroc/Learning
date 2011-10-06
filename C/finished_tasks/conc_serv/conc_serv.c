@@ -7,7 +7,7 @@
 #include <sys/types.h>
 
 #define SERVER_PORT 1340
-#define UN_SOCK_PATH "un_path"
+#define UN_SOCK_PATH "un_pat"
 #define BUFF_SIZE 4096
 #define ITERATIONS 200
 
@@ -32,7 +32,7 @@ int main(void) {
 	int		bool_1 = 1;
 	struct 	sockaddr_in in_addr;
 	struct 	sockaddr_un local, remote;
-	
+	pid_t	pid, pid_w;
 	
 	buf = malloc(BUFF_SIZE);
 	i = 0;
@@ -59,14 +59,14 @@ int main(void) {
 			perror_exit("UNIX accept() failed");
 		printf("Connected.\n");
 		while(bool_1) { 
-			if (0 < (n = recv(accept_sd, buf+actual_size, alloc_size-actual_size, 0))) {
+			if (0 < (n = recv(accept_sd, buf+actual_size, BUFF_SIZE-actual_size, 0))) {
 				actual_size+=n;
 				if (actual_size >= alloc_size) {
 					alloc_size+=BUFF_SIZE;
 					void *temp = realloc(buf, alloc_size);
 					if (temp == NULL) 
 						perror_exit("REALLOC BUG");
-					buf = temp;
+					DEBUGP("%i:%i:%i", actual_size, n, alloc_size);
 				}
 			}
 			if (0 >= n) {
@@ -85,6 +85,8 @@ int main(void) {
 	write(1, buf, actual_size);
 	printf("UNIX FINISHED\n");
 	
+	
+	
 	/*INET Server*/
 	if (0 > (listen_sd = socket(AF_INET, SOCK_STREAM, 0)))
 		perror_exit("socket() failed");
@@ -94,50 +96,51 @@ int main(void) {
 		perror_exit("setsockopt() failed");
 	memset(&in_addr, 0, sizeof(in_addr));
 	in_addr.sin_family = AF_INET;
-	//printf(INADDR_ANY);
-	//in_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	in_addr.sin_port = htons(SERVER_PORT);
 	if (0 > bind(listen_sd, (struct sockaddr *)&in_addr, sizeof(in_addr))) 
 		perror_exit("bind() failed");
 	if(0 > listen(listen_sd, 5)) 
 		perror_exit("listen() failed");
-	//printf("The server is ready\n");
+	printf("The server is ready\n");
 	char read_buf[4096];
-	while(1) {
-		//printf("Iteration: %d\n", i);
-		//printf("	waiting on accept()\n");
-		if (0 > (accept_sd = accept(listen_sd, NULL, NULL))) 
-			perror_exit("accept() failed");
-		//printf("	accept completed successfully\n");
-		//printf("	wait for client to send us a message\n");
-		if (0 >= (n = recv(accept_sd, read_buf, sizeof(read_buf), 0)))
-			perror_exit("recv() failed");
-		char 	*line;
-		char 	*brkt;
-		char 	*cmp = "HTTP 1.1";
-		char 	*cmp_1 = "hh";
-		char 	*cmp_2 = "xx";
-		int 	cmpans;
-		for(line = strtok_r(read_buf, "\n", &brkt); line; 
-			line = strtok_r(NULL, "\n", &brkt)) {
-			if (0 == strcmp(line, cmp))//\n\n
-				cmpans = 99;
-			if (0 == strcmp(line, cmp)) //trie 
-				cmpans = 1;				//gnuperf
-			else if (0 == strcmp(line, cmp_1))
-				cmpans = 2;
-			else if (0 == strcmp(line, cmp_2))
-				cmpans = 3;
+	while(1) { 
+		if (0 <= (accept_sd = accept(listen_sd, NULL, NULL))) {
+			if (0 > (pid = fork())) 
+				perror_exit("fork() failed");
 		}
-		//NOT >= but rather nested (see UNIX)
-		//printf("	<%s>\n", buf);
-		//printf("	echoit back\n");
-		if (0 >= send(accept_sd, buf, actual_size, 0)) 
-			perror_exit("send() failed");
-		shutdown(accept_sd, SHUT_RDWR);
-		close(accept_sd);
+		else perror_exit("accept() failed");
+		if (0 == pid) { //child
+			if (0 >= (n = recv(accept_sd, read_buf, sizeof(read_buf), 0)))
+				perror_exit("recv() failed");
+			char *line;
+			char *brkt;
+			char *cmp = "HTTP 1.1";
+			char *cmp_1 = "hh";
+			char *cmp_2 = "xx";
+			int cmpans;
+			for(line = strtok_r(read_buf, "\n", &brkt); line; 
+				line = strtok_r(NULL, "\n", &brkt)) {
+				if (0 == strcmp(line, cmp))
+					cmpans = 99;
+				if (0 == strcmp(line, cmp)) //trie 
+					cmpans = 1;				//gnuperf
+				else if (0 == strcmp(line, cmp_1))
+					cmpans = 2;
+				else if (0 == strcmp(line, cmp_2))
+					cmpans = 3;
+			}
+			//NOT >= but rather nested (see UNIX)
+			//printf("	<%s>\n", buf);
+			//printf("	echoit back\n");
+			if (0 >= send(accept_sd, buf, actual_size, 0)) 
+				perror_exit("send() failed");
+			shutdown(accept_sd, SHUT_RDWR);
+			close(accept_sd);
+			printf("%i\n",i);
+			exit(0);
+		}
+		++i;
 	}
-	printf("done\n");
 	close(listen_sd);
 }
 
