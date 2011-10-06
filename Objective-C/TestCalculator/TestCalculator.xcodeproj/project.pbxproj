@@ -11,14 +11,14 @@
 		B46FAC57143C49FA0009A893 /* CalculatorBrain.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CalculatorBrain.m; sourceTree = "<group>"; };
 		B46FAC58143C4AD70009A893 /* CalculatorViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CalculatorViewController.h; sourceTree = "<group>"; };
 		B46FAC59143C4AD70009A893 /* CalculatorViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CalculatorViewController.m; sourceTree = "<group>"; };
-		B46FAC5B143C4C980009A893 /* CalculatorViewController.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = CalculatorViewController.xib; sourceTree = "<group>"; };
+		B491D340143D80D5002BB039 /* en */ = {isa = PBXFileReference; name = en; path = en.lproj/CalculatorViewController.xib; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		B46FAC4D143C49990009A893 = {
 			isa = PBXGroup;
 			children = (
-				B46FAC5B143C4C980009A893 /* CalculatorViewController.xib */,
+				B491D341143D80D5002BB039 /* CalculatorViewController.xib */,
 				B46FAC56143C49FA0009A893 /* CalculatorBrain.h */,
 				B46FAC57143C49FA0009A893 /* CalculatorBrain.m */,
 				B46FAC58143C4AD70009A893 /* CalculatorViewController.h */,
@@ -45,6 +45,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXVariantGroup section */
+		B491D341143D80D5002BB039 /* CalculatorViewController.xib */ = {
+			isa = PBXVariantGroup;
+			children = (
+				B491D340143D80D5002BB039 /* en */,
+			);
+			name = CalculatorViewController.xib;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		B46FAC54143C499A0009A893 /* Debug */ = {

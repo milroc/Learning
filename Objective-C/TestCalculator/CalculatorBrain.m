@@ -10,14 +10,15 @@
 
 @implementation CalculatorBrain
 
-- (id)init
+- (void)setOperand:(double)anOperand
 {
-    self = [super init];
-    if (self) {
-        // Initialization code here.
-    }
-    
-    return self;
+    operand = anOperand;
+}
+
+- (double)performOperation:(NSString *)operation;
+{
+    [operation sendMessage:argument];
+    return aDouble;
 }
 
 @end

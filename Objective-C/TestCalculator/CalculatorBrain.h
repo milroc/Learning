@@ -14,5 +14,5 @@
 }
 
 - (void)setOperand:(double)anOperand;
-- (double) performOperation:(NSString *)operation;
+- (double)performOperation:(NSString *)operation;
 @end
