@@ -1,0 +1,4 @@
+shell /usr/local/bin/bash
+hardstatus lastline "%{= KW}%-w%{= bw}%50>%n %t%{-}%+w%< %=[%H]"
+shelltitle ']$ |bash'
+setenv SSH_AUTH_SOCK "/tmp/ssh-agent-$USER-screen"

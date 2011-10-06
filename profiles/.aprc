@@ -1,0 +1,61 @@
+# $Header: //prod/main/sam/phoebe/doc/setup/gsrc#1 $
+#
+# Developer environment initialization functions.
+#
+# These core developer functions are used to set up your environment for
+# working on various different products.
+#
+# It is recommended that you source this file in your .bashrc file (if you use
+# bash) like this:
+# if [ -f ~/.aprc ]
+# then
+#     . ~/.aprc
+# fi
+
+_aprc_doit() {
+    if [ ${1:0:1} == "/" ]
+    then
+        export IPROOT=$1
+    else
+        export IPROOT=$HOME/work/$2-$1
+    fi
+    if [ ! -d $IPROOT ]
+    then
+        echo "$IPROOT does not exist."
+    else
+        if [ -f $IPROOT/$3 ]
+        then
+            . $IPROOT/$3
+        else
+            echo "$IPROOT/$3 is missing"
+        fi
+    fi
+}
+
+wsa() {
+    _aprc_doit $1 wsa coeus/aprc.wsa
+}
+
+esa() {
+    _aprc_doit $1 sam phoebe/aprc.esa
+}
+
+sma() {
+    _aprc_doit $1 sam phoebe/aprc.sma
+}
+
+eea() {
+    _aprc_doit $1 sam cronus/aprc.eea
+}
+
+wsa_cli() {
+    _aprc_doit $1 wsa coeus/aprc.wsa
+    shift 1
+    $IPROOT/data/bin/python $IPROOT/coeus/cli/smad_cli.py $*
+}
+
+esa_cli() {
+    _aprc_doit $1 esa coeus/aprc.esa
+    shift 1
+    $IPROOT/data/bin/python $IPROOT/coeus/cli/cli.py $*
+}
