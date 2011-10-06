@@ -1,3 +1,4 @@
+#include <aio.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <errno.h> //CHECK
@@ -41,7 +42,7 @@ typedef struct {
 typedef struct {
 	unsigned long reference_count;
 	size_t buf_size; //can I keep track of received just from this
-	char *buf;
+	void *buf;
 } ctrl;
 
 /* Global Variables */
@@ -108,6 +109,12 @@ register_write_interest(int fd, void (*func)(int, void *), void *arg)
 	register_interest(fd, func, arg, (EV_ADD | EV_ONESHOT), EVFILT_WRITE);
 }
 
+static void
+register_aio_interest(int fd, void (*func)(int, void*), void *arg)
+{
+	register_interest(fd, func, arg, (EV_ADD | EV_ONESHOT), EVFILT_AIO);
+}
+
 static int
 interpret_buf(char *read_buf)
 {
@@ -120,15 +127,17 @@ interpret_buf(char *read_buf)
 }
 
 static void
-aio_read_buf(int fd, void *arg)
+read_unix_conn_post_aio(int fd, void *arg)
 {
 	
+	close(fd); //when ref_count == 0 close(aioc->fd)
+	curr_ctrl = controller;
 }
 
 static void
 aio_write_buf(int fd, void *arg)
 {
-	
+		
 }
 
 static void
@@ -151,6 +160,10 @@ read_unix_conn(int fd, void *arg)
 	else if (EAGAIN == errno) {
 		register_read_interest(fd, read_conn_helper, arg);
 	} else if (done) { //how is it done? same as interpret?
+		struct aiocb *aioc = malloc(sizeof(aiocb));
+		aioc->aio_fildes = fopen("b.buff", read); // read/write 
+		aioc->aio_buf = (void *)controller->buf;
+		aio_read(aioc);
 		close(fd);
 		curr_ctrl = controller;
 	} else perror_exit("UNIX recv() failed");
@@ -169,6 +182,28 @@ accept_unix_conn(int fd, void *arg)
 	ctrl *controller = malloc(sizeof(ctrl));
 	arg = (void *) controller;
 	register_read_interest(fd, accept_unix_conn, arg);
+}
+
+static void
+write_conn_post_aio(int fd, void *arg)
+{
+
+}
+
+static void
+aio_read_buf(int fd, void *arg)
+{
+	/*ctrl *controller = (ctrl *) arg;
+	struct aiocb *aioc = (aiocb *)(controller->buf);
+	int aio_ret;
+	if (0 > (aio_ret = aio_read(aioc)) {
+		if ((EAGAIN == errno) || (EINPROGRESS == aio_error(aioc)))
+			register_aio_interest(fd, aio_read_buf, arg);
+		else
+			perror_exit("aio_read() failed");
+	} else if (aio_return(aioc) == aio_ret) {
+		//read done
+	} else perror_exit("aio_read() failed");*/
 }
 
 static void
@@ -250,12 +285,12 @@ event_loop(void)
 	struct kevent kernel_event;
 	struct timespec time = {0, 0};
 	int n;		
-	if(0 > (kernel_queue = kqueue())) 
+	if (0 > (kernel_queue = kqueue())) 
 		perror_exit("kqueue() failed");	
-	void *arg;
+	void *arg = NULL; //HMM
 	register_read_interest(listen_usd, accept_unix_conn, arg);
 	register_read_interest(listen_sd, accept_conn, arg);
-	while(1) {
+	while (1) {
 		struct kevent *event;
 		if (0 > (n = kevent(kernel_queue, change_list, nchanges, 
 										event_list, MAX_EVENTS, &time)))
@@ -264,9 +299,14 @@ event_loop(void)
 		    nchanges = 0;
 			for (event = event_list; event < event_list+n; event++) {
 				if (EVFILT_READ == event->filter) {
-					(interest_array[event->ident]).func(event->ident, arg);
+					(interest_array[event->ident]).func(event->ident, 
+														event->arg);
 				} else if (EVFILT_WRITE == event->filter) {
-					(interest_array[event->ident]).func(event->ident, arg);
+					(interest_array[event->ident]).func(event->ident, 
+														event->arg);
+				} else if (EVFILT_AIO == event->filter) {
+					(interest_array[event->ident]).func(event->ident, 
+														event->arg);
 				} else perror_exit("This is an odd event\n");
 			}
 		}
