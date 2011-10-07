@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <errno.h> //CHECK
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -110,9 +111,27 @@ register_write_interest(int fd, void (*func)(int, void *), void *arg)
 }
 
 static void
-register_aio_interest(int fd, void (*func)(int, void*), void *arg)
+register_aio_read_interest(int fd, void (*func)(int, void *), void *arg, int offset, int cbfd, void (*cbfunc)(int, void *), void *cbarg)
 {
-	register_interest(fd, func, arg, (EV_ADD | EV_ONESHOT), EVFILT_AIO);
+	aiocb *aioc = malloc(sizeof(aiocb));
+	aioc->aio_fildes = fd;     
+	aioc->aio_buf = arg;
+	aioc->aio_nbytes;
+    aioc->aio_offset;     
+    aioc->aio_reqprio; //?
+
+    aioc->aio_lio_opcode;
+	aioc->aio_flags;
+    
+    aioc->aio_sigevent = malloc(sizeof(struct sigevent));  
+    aioc->aio_sigevent->notifyinfo.nifunc = cbfunc;
+    aioc->aio_sigevent->notifyinfo.nisigno;
+    aioc->aio_sigevent->signo;
+	aioc->aio_sigevent->sigev_notify = SIGEV_CALLBACK;
+    aioc->aio_sigevent->sigev_notifyinfo;
+    aioc->aio_sigevent->sigv
+    
+	aio_read(aioc);
 }
 
 static int
@@ -124,20 +143,6 @@ interpret_buf(char *read_buf)
 				if (0 == strcmp(line, cmp))
 					return 1;
 	}
-}
-
-static void
-read_unix_conn_post_aio(int fd, void *arg)
-{
-	
-	close(fd); //when ref_count == 0 close(aioc->fd)
-	curr_ctrl = controller;
-}
-
-static void
-aio_write_buf(int fd, void *arg)
-{
-		
 }
 
 static void
@@ -158,12 +163,8 @@ read_unix_conn(int fd, void *arg)
 	}  
 	if (0 == n) perror_exit("UNIX peer dc");
 	else if (EAGAIN == errno) {
-		register_read_interest(fd, read_conn_helper, arg);
+		register_read_interest(fd, read_conn_helper, arg); //........unix?
 	} else if (done) { //how is it done? same as interpret?
-		struct aiocb *aioc = malloc(sizeof(aiocb));
-		aioc->aio_fildes = fopen("b.buff", read); // read/write 
-		aioc->aio_buf = (void *)controller->buf;
-		aio_read(aioc);
 		close(fd);
 		curr_ctrl = controller;
 	} else perror_exit("UNIX recv() failed");
@@ -193,21 +194,34 @@ write_conn_post_aio(int fd, void *arg)
 static void
 aio_read_buf(int fd, void *arg)
 {
-	/*ctrl *controller = (ctrl *) arg;
-	struct aiocb *aioc = (aiocb *)(controller->buf);
-	int aio_ret;
-	if (0 > (aio_ret = aio_read(aioc)) {
-		if ((EAGAIN == errno) || (EINPROGRESS == aio_error(aioc)))
-			register_aio_interest(fd, aio_read_buf, arg);
-		else
-			perror_exit("aio_read() failed");
-	} else if (aio_return(aioc) == aio_ret) {
-		//read done
-	} else perror_exit("aio_read() failed");*/
+	if (offset + nbytes == file_size) {
+		close(file);
+	} else if (nbytes? + (offset % BUFFSIZE) == BUFF_SIZE) {
+		register_write_interest(); //post_aio
+	} else if (nbytes + (offset % BUFFSIZE) < BUFF_SIZE) {
+		offset += nbytes;
+		register_aio_read_interest();
+	} else perror_exit("aio_read_buf() failed");
+}
+	
+static void 
+write_conn_pre_aio_helper(int fd, void *arg)
+{
+
+
+}
+static void
+write_conn_pre_aio(int fd, void *arg)
+{
+	track *tracker = (void *)arg;
+	int file = open(tracker->buf, O_NONBLOCK);
+	//EAGAIN EACCESS??
+	void *buf = malloc(BUFF_SIZE);
+	register_aio_read_interest(file, buf, offset, fd, aio_read_buf, arg);
 }
 
 static void
-write_conn(int fd, void *arg)
+write_conn_via_unix(int fd, void *arg)
 {
 	int n;
 	track *tracker = (void *)arg;
@@ -242,13 +256,16 @@ read_conn_helper(int fd, void *arg)
 			tracker->buf = (char *)temp;
 		}
 	} 
-	if (0 == n)  perror_exit("peer dc hmm");
-	/* Figure out if we also need to read more based off parsing */
+	if (0 == n)  
+		perror_exit("peer dc hmm");
 	else if (EAGAIN == errno)
 		register_read_interest(fd, read_conn_helper, arg);
-	else if (interpret_buf(tracker->buf)) 
-		register_write_interest(fd, write_conn, arg);
-	else perror_exit("recv() failed");
+	else if (1 == interpret_buf(tracker->buf))  //unix
+		register_write_interest(fd, write_conn_via_unix, arg);
+	else if (2 == interpret_buf(tracker->buf)) {
+		//if 2 == interpret_buf reduce to /abc/efg.hij
+		register_write_interest(fd, write_conn_pre_aio, arg);
+	} else perror_exit("recv() failed");
 }
 
 static void 
