@@ -46,6 +46,17 @@ typedef struct {
 	void *buf;
 } ctrl;
 
+typedef struct {
+	track *tracker;
+	int file;
+	int socket;
+	void *buf;
+	size_t buf_size;
+	int offset;
+	int buf_offset;
+	int file_size;
+} aio_transfer;
+
 /* Global Variables */
 int conns = 0;
 int unix_conns = 0;
@@ -111,7 +122,8 @@ register_write_interest(int fd, void (*func)(int, void *), void *arg)
 }
 
 static void
-register_aio_read_interest(int fd, void (*func)(int, void *), void *arg, int offset, int cbfd, void (*cbfunc)(int, void *), void *cbarg)
+register_aio_read_interest(int fd, void (*func)(int, void *), void *arg, 
+							int offset, int cbfd, void (*cbfunc)(void *), void *cbarg)
 {
 	aiocb *aioc = malloc(sizeof(aiocb));
 	aioc->aio_fildes = fd;     
@@ -207,17 +219,23 @@ aio_read_buf(int fd, void *arg)
 static void 
 write_conn_pre_aio_helper(int fd, void *arg)
 {
-
-
+	aio_transfer *trans = (aio_transfer *)arg;
 }
+
 static void
 write_conn_pre_aio(int fd, void *arg)
 {
-	track *tracker = (void *)arg;
-	int file = open(tracker->buf, O_NONBLOCK);
-	//EAGAIN EACCESS??
-	void *buf = malloc(BUFF_SIZE);
-	register_aio_read_interest(file, buf, offset, fd, aio_read_buf, arg);
+	aio_transfer *trans = malloc(sizeof(aio_transfer));
+	trans->tracker = (void *)arg;
+	if (0 > (trans->file = open(getUri(tracker->buf), O_NONBLOCK))
+		perror_exit("open() failed");
+	trans->socket = fd;
+	trans->buf = malloc(BUFF_SIZE);
+	trans->buf_size = BUFF_SIZE;
+	trans->offset = 0;
+	trans->buf_offset = 0;
+	trans->file_size = 0; //NEED SYSTEM CALL FOR METADATA
+	register_write_interest(fd, write_conn_pre_aio_helper, (void *) trans);
 }
 
 static void
@@ -263,7 +281,7 @@ read_conn_helper(int fd, void *arg)
 	else if (1 == interpret_buf(tracker->buf))  //unix
 		register_write_interest(fd, write_conn_via_unix, arg);
 	else if (2 == interpret_buf(tracker->buf)) {
-		//if 2 == interpret_buf reduce to /abc/efg.hij
+		//if 2 == interpret_buf reduce from /abc/efg.hij to efg.hij
 		register_write_interest(fd, write_conn_pre_aio, arg);
 	} else perror_exit("recv() failed");
 }
@@ -276,8 +294,8 @@ read_conn(int fd, void *arg)
 	tracker->actual_size = 0;
 	tracker->alloc_size = BUFF_SIZE;
 	tracker->sent_size = 0;
-	tracker->ctrl = curr_ctrl;
-	ctrl->reference_count++;
+	tracker->ctrl = curr_ctrl;//elsewhere
+	ctrl->reference_count++;//need to be done elsewhere
 	arg = (void *) tracker;
 	register_read_interest(fd, read_conn_helper, arg);
 }
@@ -304,7 +322,7 @@ event_loop(void)
 	int n;		
 	if (0 > (kernel_queue = kqueue())) 
 		perror_exit("kqueue() failed");	
-	void *arg = NULL; //HMM
+	void *arg = NULL;
 	register_read_interest(listen_usd, accept_unix_conn, arg);
 	register_read_interest(listen_sd, accept_conn, arg);
 	while (1) {
@@ -323,7 +341,8 @@ event_loop(void)
 														event->arg);
 				} else if (EVFILT_AIO == event->filter) {
 					(interest_array[event->ident]).func(event->ident, 
-														event->arg);
+														event->arg); 
+					//does this work? shouldn't it be the callback?
 				} else perror_exit("This is an odd event\n");
 			}
 		}
