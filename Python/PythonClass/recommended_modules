@@ -1,7 +1,13 @@
 itty.py
+	more full featured: flask 
+		   	    bottle
+	python made: BaseHTTPServer
+
 requests.py
 httplib2
 tornado (made from twisted)
 dJango
+pyserial
+pexpect
 
 The Little Book of Semaphores
