@@ -1,0 +1,71 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXFileReference section */
+		B40932A81443EBAA0076AEAE /* BasicSyntax.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BasicSyntax.h; sourceTree = "<group>"; };
+		B40932A91443EBAA0076AEAE /* BasicSyntax.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BasicSyntax.m; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		B409329F1443EB7A0076AEAE = {
+			isa = PBXGroup;
+			children = (
+				B40932A81443EBAA0076AEAE /* BasicSyntax.h */,
+				B40932A91443EBAA0076AEAE /* BasicSyntax.m */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXProject section */
+		B40932A11443EB7A0076AEAE /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = B40932A41443EB7A0076AEAE /* Build configuration list for PBXProject "LanguageTricks" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = B409329F1443EB7A0076AEAE;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+			);
+		};
+/* End PBXProject section */
+
+/* Begin XCBuildConfiguration section */
+		B40932A61443EB7A0076AEAE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		B40932A71443EB7A0076AEAE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B40932A41443EB7A0076AEAE /* Build configuration list for PBXProject "LanguageTricks" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B40932A61443EB7A0076AEAE /* Debug */,
+				B40932A71443EB7A0076AEAE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = B40932A11443EB7A0076AEAE /* Project object */;
+}
