@@ -58,9 +58,13 @@ typedef struct {
 } aio_transfer;
 
 /* Global Variables */
+
+// tracking
 int conns = 0;
 int unix_conns = 0;
 
+//eventing
+int kernel_queue;
 int nchanges = 0;
 int nevents = 0;
 struct kevent event_list[MAX_EVENTS];
@@ -69,8 +73,10 @@ struct kevent change_list[MAX_EVENTS];
 interest interest_array[MAX_FD];
 ctrl *curr_ctrl;
 
+// TCPing
 int listen_sd;
 int listen_usd;
+
 //from a design standpoint what of these should be just in a structure that
 //is initialized in main() at start and what could be global
 //Most are trackers of success for programs
@@ -78,6 +84,9 @@ int listen_usd;
 // but may go better in a local sense
 
 /* Functions */
+
+/* MEMORY AND ERROR FUNCTIONS */
+
 static void
 perror_exit(const char *str)
 {
@@ -98,6 +107,8 @@ free_track(track *tracker)
 	if (tracker->ctrl->reference_count == 0) free_ctrl(tracker->ctrl);
 	free(tracker);
 }
+
+/* REGISTERING INTEREST */
 
 static void 
 register_interest(int fd, void (*func)(int, void*), void *arg, 
@@ -123,41 +134,63 @@ register_write_interest(int fd, void (*func)(int, void *), void *arg)
 
 static void
 register_aio_read_interest(int fd, void (*func)(int, void *), void *arg, 
-							int offset, int cbfd, void (*cbfunc)(void *), void *cbarg)
+							int offset, int cbfd, void (*cbfunc)(void *), void *cbarg,
+							int nbytes, int offset)
 {
-	aiocb *aioc = malloc(sizeof(aiocb));
+	aiocb *aioc;
+	if (NULL == (aioc = malloc(sizeof(aiocb))) 
+		perror_exit("aciob malloc");
+	
 	aioc->aio_fildes = fd;     
 	aioc->aio_buf = arg;
-	aioc->aio_nbytes;
-    aioc->aio_offset;     
-    aioc->aio_reqprio; //?
-
-    aioc->aio_lio_opcode;
-	aioc->aio_flags;
-    
-    aioc->aio_sigevent = malloc(sizeof(struct sigevent));  
-    aioc->aio_sigevent->notifyinfo.nifunc = cbfunc;
-    aioc->aio_sigevent->notifyinfo.nisigno;
-    aioc->aio_sigevent->signo;
-	aioc->aio_sigevent->sigev_notify = SIGEV_CALLBACK;
-    aioc->aio_sigevent->sigev_notifyinfo;
-    aioc->aio_sigevent->sigv
-    
+	aioc->aio_nbytes = nbytes; //this shouldn't be here???right??
+    aioc->aio_offset = offset;     //^
+        
+    aioc->aio_sigevent.notifyinfo.nifunc = cbfunc;
+    aioc->aio_sigevent.signo = kernel_queue;
+	aioc->aio_sigevent.sigev_notify = SIGEV_KEVENT;
+	
 	aio_read(aioc);
 }
 
-static int
+
+/* HTTP LAYER */
+
+static char * 
 interpret_buf(char *read_buf)
 {
-	char *cmp = "\r\n\r\n";
-	for(line = strtok_r(read_buf, "\n", &brkt); line; 
-				line = strtok_r(NULL, "\n", &brkt)) {
-				if (0 == strcmp(line, cmp))
-					return 1;
-	}
+	/* 
+	I realize this is 
+	1) a terrible implementation. 
+	2) not testing for anything other 
+	then an expected GET request.
+	
+	However I lost my buf interpretation code pre-setting up github, 
+	so I rewrote this quickly.
+	*/
+	int bool = 0;
+	char *line = NULL;
+	char *last_line = NULL;
+	char *word = NULL;
+	char *last_word = NULL;
+	line = strtok_r(read_buf, "\n", &last_line);
+	while (line != NULL) {
+		word = strtok_r(line, " ", &last_word); 
+		while (word != NULL) {
+			if (0 == strcmp(word, "GET"))
+				bool = 1; 
+			if (bool && word[0] == '/')
+				return word;
+			word = strtok_r(NULL, " ", &last_word);
+		} 
+		bool = 0;
+		line = strtok_r(NULL, "\n", &last_line);
+	} 
+	return "UNSUPPORTED METHOD"; 
 }
 
-//take out: read_unix_conn and accept_unix_conn
+
+//took out: read_unix_conn and accept_unix_conn
 
 static void
 write_conn_post_aio(int fd, void *arg)
@@ -168,36 +201,19 @@ write_conn_post_aio(int fd, void *arg)
 static void
 aio_read_buf(int fd, void *arg)
 {
-	if (offset + nbytes == file_size) {
-		close(file);
-	} else if (nbytes? + (offset % BUFFSIZE) == BUFF_SIZE) {
-		register_write_interest(); //post_aio
-	} else if (nbytes + (offset % BUFFSIZE) < BUFF_SIZE) {
-		offset += nbytes;
-		register_aio_read_interest();
-	} else perror_exit("aio_read_buf() failed");
+
 }
 	
 static void 
 write_conn_pre_aio_helper(int fd, void *arg)
 {
-	aio_transfer *trans = (aio_transfer *)arg;
+	
 }
 
 static void
 write_conn_pre_aio(int fd, void *arg)
 {
-	aio_transfer *trans = malloc(sizeof(aio_transfer));
-	trans->tracker = (void *)arg;
-	if (0 > (trans->file = open(getUri(tracker->buf), O_NONBLOCK))
-		perror_exit("open() failed");
-	trans->socket = fd;
-	trans->buf = malloc(BUFF_SIZE);
-	trans->buf_size = BUFF_SIZE;
-	trans->offset = 0;
-	trans->buf_offset = 0;
-	trans->file_size = 0; //NEED SYSTEM CALL FOR METADATA
-	register_write_interest(fd, write_conn_pre_aio_helper, (void *) trans);
+
 }
 
 static void 
@@ -222,9 +238,9 @@ read_conn_helper(int fd, void *arg)
 		perror_exit("peer dc hmm");
 	else if (EAGAIN == errno)
 		register_read_interest(fd, read_conn_helper, arg);
-	else if (!strcmp(temp, 'NO CONNECTION FOUND')) {
+	else if (!strcmp(temp, "UNSUPPORTED METHOD")) 
 		register_write_interest(fd, write_conn_pre_aio, arg);
-	} else perror_exit("recv() failed");
+	else perror_exit("recv() failed");
 }
 
 static void 
@@ -254,10 +270,11 @@ accept_conn(int fd, void *arg)
 	register_read_interest(fd, accept_conn, arg);
 }
 
+
+/* EVENT LAYER */
 static void  
 event_loop(void)
 {
-	int kernel_queue;
 	struct kevent kernel_event;
 	struct timespec time = {0, 0};
 	int n;		
@@ -281,8 +298,14 @@ event_loop(void)
 					(interest_array[event->ident]).func(event->ident, 
 														event->arg);
 				} else if (EVFILT_AIO == event->filter) {
-					(interest_array[event->ident]).func(event->ident, 
-														event->arg); 
+					aioc = (struct aiocb *) event->ident;
+					nbytes = aio_return(iocb);
+					int ret;
+					if (0 < (ret = (interest_array[event->ident.filedes].func(event->ident.filedes,
+																		event->ident.arg))
+						perror_exit("Error on executing callback");
+					free(evr)??;
+					free(aioc);
 					//does this work? shouldn't it be the callback?
 				} else perror_exit("This is an odd event\n");
 			}
@@ -292,6 +315,9 @@ event_loop(void)
 	close(listen_usd);
 	close(kernel_queue);
 }
+
+
+/* TCP LAYER */
 
 static void 
 unix_serv(void)
@@ -359,7 +385,7 @@ inet_serv(void)
 int
 main(void)
 {
-	unix_serv();
+	//unix_serv();
 	inet_serv();
 	event_loop();
 	return 0;

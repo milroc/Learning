@@ -378,7 +378,7 @@ httpsvc_recv(int cfd, void *req_data)
                             exit(1);
                         }
                         //HHHHHHEHHERHEHRHERHEHREHRHEHREHHHHEEEEEERRRRREE HERE
-                        rsp_data->is_chunked = 1;
+                        rsp_data->is_chunked = 1;// just says "hey it's a file
                         rsp_data->cfd = cfd;
                         rsp_data->offset = 0;
                         rsp_data->header_offset = 0;
@@ -724,7 +724,8 @@ regist_socket_write(int evid, int (*handler)(int, void*), void *arg)
 }
 
 int
-regist_file_read(int fd, char *buf, int nbytes, int offset, int (*handler) (int, int, void*), void *arg)
+regist_file_read(int fd, char *buf, int nbytes, int offset, 
+				int (*handler) (int, int, void*), void *arg)
 {
     // DEBUGP("regist_file_read: %d", evid);
     if (fd >= event_num) {
