@@ -47,14 +47,14 @@ typedef struct {
 } ctrl;
 
 typedef struct {
-	track *tracker;
 	int file;
 	int socket;
 	void *buf;
-	size_t buf_size;
-	int offset;
-	int buf_offset;
-	int file_size;
+	int buf_size; //BUFF_SIZE always...
+	int buf_offset; 
+	int file_size; 
+	int file_offset; 
+	int nbytes;
 } aio_transfer;
 
 /* Global Variables */
@@ -142,7 +142,7 @@ register_aio_read_interest(int fd, void (*func)(int, void *), void *arg,
 		perror_exit("aciob malloc");
 	
 	aioc->aio_fildes = fd;     
-	aioc->aio_buf = arg;
+	aioc->aio_buf = arg; //not right
 	aioc->aio_nbytes = nbytes; //this shouldn't be here???right??
     aioc->aio_offset = offset;     //^
         
@@ -191,29 +191,51 @@ interpret_buf(char *read_buf)
 
 
 //took out: read_unix_conn and accept_unix_conn
+static void write_conn_pre_aio_helper(int fd, void *arg);
 
-static void
-write_conn_post_aio(int fd, void *arg)
-{
-
-}
+// 	int file;
+// 	int socket;
+// 	void *buf;
+// 	int buf_size; //BUFF_SIZE always...
+// 	int buf_offset; 
+// 	int file_size; 
+// 	int file_offset; 
+// 	int nbytes;
 
 static void
 aio_read_buf(int fd, void *arg)
 {
-
+	aio_transfer *data = (aio_transfer *) arg;
+	if (0 > data->nbytes) 
+		perror_exit("File AIO read, internal error");
+	data->file_offset += data->nbytes; //here or in event loop?
+	register_write_interest(fd, aio_read_buf, arg, data->);
 }
 	
 static void 
 write_conn_pre_aio_helper(int fd, void *arg)
-{
-	
+{	
+	aio_transfer *data = (aio_transfer *)arg;
+	if ((0 == (data->file_size - (data->file_offset + data->buf_size))) 
+				&& (data->buf_size == data->buf_offset)) { //file read
+		data->nbytes = 0;
+		send();
+		close(socket);
+		close(file);
+		free(buf);
+		free(data); //will have leaks
+	} else { //chunks
+		data->nbytes = 0;
+		send();
+		register_aio_interest();
+	}	
 }
 
 static void
 write_conn_pre_aio(int fd, void *arg)
 {
-
+	
+		
 }
 
 static void 
@@ -238,9 +260,17 @@ read_conn_helper(int fd, void *arg)
 		perror_exit("peer dc hmm");
 	else if (EAGAIN == errno)
 		register_read_interest(fd, read_conn_helper, arg);
-	else if (!strcmp(temp, "UNSUPPORTED METHOD")) 
-		register_write_interest(fd, write_conn_pre_aio, arg);
-	else perror_exit("recv() failed");
+	else if (!strcmp(temp, "UNSUPPORTED METHOD")) {
+		aio_transfer *data = malloc(sizeof(aio_transfer));
+		data->file = 'uri';
+		data->socket = fd;
+		data->buf_size = BUFF_SIZE;
+		data->buf = malloc(sizeof(data->buf_size));
+		data->buf_offset = 0;
+		data->file_size = 'system call to get filesize';
+		data->file_offset = 0; //shouldn't this be set before? yep...
+		register_aio_interest(fd, , );
+	} else perror_exit("recv() failed");
 }
 
 static void 
@@ -304,7 +334,7 @@ event_loop(void)
 					if (0 < (ret = (interest_array[event->ident.filedes].func(event->ident.filedes,
 																		event->ident.arg))
 						perror_exit("Error on executing callback");
-					free(evr)??;
+					free(evr);////////??;
 					free(aioc);
 					//does this work? shouldn't it be the callback?
 				} else perror_exit("This is an odd event\n");
