@@ -1,7 +1,7 @@
 #include <aio.h>
 #include <netinet/in.h>
 #include <pthread.h>
-#include <errno.h> //CHECK
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
@@ -17,7 +17,6 @@
 /* Constants */
 #define BUFF_SIZE 4096
 #define SERVER_PORT 1340
-#define UN_SOCK_PATH "un_path"
 #define MAX_EVENTS 5000
 #define MAX_FD 5000
 
@@ -62,31 +61,22 @@ typedef struct {
 // tracking
 int conns = 0;
 int unix_conns = 0;
-
 //eventing
 int kernel_queue;
 int nchanges = 0;
 int nevents = 0;
 struct kevent event_list[MAX_EVENTS];
 struct kevent change_list[MAX_EVENTS];
-
 interest interest_array[MAX_FD];
 ctrl *curr_ctrl;
-
 // TCPing
 int listen_sd;
 int listen_usd;
 
-//from a design standpoint what of these should be just in a structure that
-//is initialized in main() at start and what could be global
-//Most are trackers of success for programs
-//Some (listen_(u)sd, n(events)changes are necessary for the program
-// but may go better in a local sense
-
 /* Functions */
+static void write_conn_pre_aio_helper(int fd, void *arg);
 
 /* MEMORY AND ERROR FUNCTIONS */
-
 static void
 perror_exit(const char *str)
 {
@@ -109,7 +99,6 @@ free_track(track *tracker)
 }
 
 /* REGISTERING INTEREST */
-
 static void 
 register_interest(int fd, void (*func)(int, void*), void *arg, 
 					uint16_t flags, int16_t filter)
@@ -138,7 +127,7 @@ register_aio_read_interest(int fd, void (*func)(int, void *), void *arg,
 							int nbytes, int offset)
 {
 	aiocb *aioc;
-	if (NULL == (aioc = malloc(sizeof(aiocb))) 
+	if (NULL == (aioc = malloc(sizeof(aiocb)))) 
 		perror_exit("aciob malloc");
 	
 	aioc->aio_fildes = fd;     
@@ -153,9 +142,7 @@ register_aio_read_interest(int fd, void (*func)(int, void *), void *arg,
 	aio_read(aioc);
 }
 
-
 /* HTTP LAYER */
-
 static char * 
 interpret_buf(char *read_buf)
 {
@@ -189,9 +176,8 @@ interpret_buf(char *read_buf)
 	return "UNSUPPORTED METHOD"; 
 }
 
-
 //took out: read_unix_conn and accept_unix_conn
-static void write_conn_pre_aio_helper(int fd, void *arg);
+
 
 // 	int file;
 // 	int socket;
@@ -231,13 +217,6 @@ write_conn_pre_aio_helper(int fd, void *arg)
 	}	
 }
 
-static void
-write_conn_pre_aio(int fd, void *arg)
-{
-	
-		
-}
-
 static void 
 read_conn_helper(int fd, void *arg) 
 {
@@ -262,8 +241,8 @@ read_conn_helper(int fd, void *arg)
 		register_read_interest(fd, read_conn_helper, arg);
 	else if (!strcmp(temp, "UNSUPPORTED METHOD")) {
 		aio_transfer *data = malloc(sizeof(aio_transfer));
-		data->file = 'uri';
-		data->socket = fd;
+		data->file = fopen(temp); //<-?
+		data->socket = fd; 
 		data->buf_size = BUFF_SIZE;
 		data->buf = malloc(sizeof(data->buf_size));
 		data->buf_offset = 0;
@@ -300,7 +279,6 @@ accept_conn(int fd, void *arg)
 	register_read_interest(fd, accept_conn, arg);
 }
 
-
 /* EVENT LAYER */
 static void  
 event_loop(void)
@@ -332,7 +310,7 @@ event_loop(void)
 					nbytes = aio_return(iocb);
 					int ret;
 					if (0 < (ret = (interest_array[event->ident.filedes].func(event->ident.filedes,
-																		event->ident.arg))
+																		event->ident.arg))))
 						perror_exit("Error on executing callback");
 					free(evr);////////??;
 					free(aioc);
@@ -346,49 +324,8 @@ event_loop(void)
 	close(kernel_queue);
 }
 
-
 /* TCP LAYER */
-
-static void 
-unix_serv(void)
-{
-	int	accept_sd;
-	int alloc_size;
-	int n;
-	int	bool = 1;
-	int	bool_1 = 1;
-	struct sockaddr_un local; 
-	struct sockaddr_un remote;
-	alloc_size = BUFF_SIZE;
-	buf = malloc(BUFF_SIZE);
-	actual_size = 0;
-	if (0 > (listen_usd = socket(AF_UNIX, SOCK_STREAM, 0)))
-		perror_exit("UNIX socket() failed");
-	memset(&local, 0, sizeof(local));
-	local.sun_family = AF_UNIX;
-	local.sun_len = strlen(UN_SOCK_PATH);
-	memcpy(local.sun_path, UN_SOCK_PATH, local.sun_len);
-	unlink(local.sun_path);
-	if (0 > bind(listen_usd, (struct sockaddr *)&local, sizeof(local)))
-		perror_exit("UNIX bind() failed");	
-	if (0 > listen(listen_usd, 5))
-		perror_exit("UNIX listen() failed");
-	while (0 < (accept_sd = accept(listen_usd, (struct sockaddr *)&remote, &n))) {
-		while (0 < (n = recv(accept_sd, buf+actual_size, BUFF_SIZE-actual_size, 0))) {
-			actual_size+=n;
-			if (actual_size >= alloc_size) {
-				alloc_size+=BUFF_SIZE;
-				void *temp = realloc(buf, alloc_size);
-				if (temp == NULL)
-					perror_exit("REALLOC BUG");
-				buf = temp;
-			}
-		} if (0 > n) perror_exit("UNIX recv() failed");
-		close(accept_sd);
-	} if (0 > accept_sd) perror_exit("UNIX accept() failed");
-	printf("Received First buffer");
-	fcntl(listen_usd, F_SETFL, fcntl(listen_usd, F_GETFL, 0) | O_NONBLOCK);	
-}
+//removed unix serv
 
 static void 
 inet_serv(void)
