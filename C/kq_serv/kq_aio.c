@@ -32,6 +32,12 @@ typedef struct {
 } interest;
 
 typedef struct {
+	unsigned long reference_count;
+	size_t buf_size; //can I keep track of received just from this
+	void *buf;
+} ctrl;
+
+typedef struct {
 	char *buf;
 	size_t actual_size;
 	size_t alloc_size;
@@ -39,18 +45,11 @@ typedef struct {
 	ctrl *controller;
 } track;
 
-typedef struct {
-	unsigned long reference_count;
-	size_t buf_size; //can I keep track of received just from this
-	void *buf;
-} ctrl;
 
 typedef struct {
 	int file;
 	int socket;
 	void *buf;
-	int buf_size; //BUFF_SIZE always...
-	int buf_offset; 
 	int file_size; 
 	int file_offset; 
 	int nbytes;
@@ -91,13 +90,6 @@ free_ctrl(ctrl *controller)
 	free(controller);
 }
 
-static void
-free_track(track *tracker) 
-{
-	if (tracker->ctrl->reference_count == 0) free_ctrl(tracker->ctrl);
-	free(tracker);
-}
-
 /* REGISTERING INTEREST */
 static void 
 register_interest(int fd, void (*func)(int, void*), void *arg, 
@@ -122,20 +114,18 @@ register_write_interest(int fd, void (*func)(int, void *), void *arg)
 }
 
 static void
-register_aio_read_interest(int fd, void (*func)(int, void *), void *arg, 
-							int offset, int cbfd, void (*cbfunc)(void *), void *cbarg,
-							int nbytes, int offset)
+register_aio_read_interest(int fd, void *arg, int offset, int cbfd, void (*cbfunc)(void *), 
+							void *cbarg, int nbytes) 
 {
 	aiocb *aioc;
 	if (NULL == (aioc = malloc(sizeof(aiocb)))) 
 		perror_exit("aciob malloc");
-	
 	aioc->aio_fildes = fd;     
 	aioc->aio_buf = arg; //not right
 	aioc->aio_nbytes = nbytes; //this shouldn't be here???right??
-    aioc->aio_offset = offset;     //^
-        
+    aioc->aio_offset = offset;     
     aioc->aio_sigevent.notifyinfo.nifunc = cbfunc;
+    aioc->aio_sigevent.sigev_value.sigval_ptr = cbarg;
     aioc->aio_sigevent.signo = kernel_queue;
 	aioc->aio_sigevent.sigev_notify = SIGEV_KEVENT;
 	
@@ -178,18 +168,8 @@ interpret_buf(char *read_buf)
 
 //took out: read_unix_conn and accept_unix_conn
 
-
-// 	int file;
-// 	int socket;
-// 	void *buf;
-// 	int buf_size; //BUFF_SIZE always...
-// 	int buf_offset; 
-// 	int file_size; 
-// 	int file_offset; 
-// 	int nbytes;
-
 static void
-aio_read_buf(int fd, void *arg)
+aio_read_buf(void *arg)
 {
 	aio_transfer *data = (aio_transfer *) arg;
 	if (0 > data->nbytes) 
@@ -199,21 +179,20 @@ aio_read_buf(int fd, void *arg)
 }
 	
 static void 
-write_conn_pre_aio_helper(int fd, void *arg)
+write_conn_pre_aio_helper(void *arg)
 {	
 	aio_transfer *data = (aio_transfer *)arg;
 	if ((0 == (data->file_size - (data->file_offset + data->buf_size))) 
 				&& (data->buf_size == data->buf_offset)) { //file read
-		data->nbytes = 0;
 		send();
 		close(socket);
 		close(file);
 		free(buf);
 		free(data); //will have leaks
 	} else { //chunks
-		data->nbytes = 0;
 		send();
-		register_aio_interest();
+		register_aio_read_interest(data->file, data->buf, data->file_offset, data->socket, aio_read_buf, 
+									data, data->nbytes);
 	}	
 }
 
@@ -241,14 +220,15 @@ read_conn_helper(int fd, void *arg)
 		register_read_interest(fd, read_conn_helper, arg);
 	else if (!strcmp(temp, "UNSUPPORTED METHOD")) {
 		aio_transfer *data = malloc(sizeof(aio_transfer));
-		data->file = fopen(temp); //<-?
+		data->file = fopen(temp, O_RDONLY); //? does there need to be / in URI
 		data->socket = fd; 
 		data->buf_size = BUFF_SIZE;
-		data->buf = malloc(sizeof(data->buf_size));
-		data->buf_offset = 0;
-		data->file_size = 'system call to get filesize';
-		data->file_offset = 0; //shouldn't this be set before? yep...
-		register_aio_interest(fd, , );
+		data->nbytes = BUFF_SIZE;
+		data->buf = malloc(BUFF_SIZE);
+		data->file_size = 'system call to get filesize'; //?
+		data->file_offset = 0;
+		register_aio_read_interest(data->file, data->buf, data->file_offset, data->socket, aio_read_buf, 
+									data, data->nbytes);
 	} else perror_exit("recv() failed");
 }
 
@@ -312,9 +292,7 @@ event_loop(void)
 					if (0 < (ret = (interest_array[event->ident.filedes].func(event->ident.filedes,
 																		event->ident.arg))))
 						perror_exit("Error on executing callback");
-					free(evr);////////??;
-					free(aioc);
-					//does this work? shouldn't it be the callback?
+					free(aioc); //?
 				} else perror_exit("This is an odd event\n");
 			}
 		}
@@ -352,7 +330,6 @@ inet_serv(void)
 int
 main(void)
 {
-	//unix_serv();
 	inet_serv();
 	event_loop();
 	return 0;
