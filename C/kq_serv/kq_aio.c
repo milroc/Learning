@@ -13,6 +13,9 @@
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 
 /* Constants */
 #define BUFF_SIZE 4096
@@ -29,37 +32,29 @@
 typedef struct {
 	void *arg;
 	void (*func)(int, void *);
+	void (*write_func)(void *);
 } interest;
-
-typedef struct {
-	unsigned long reference_count;
-	size_t buf_size; //can I keep track of received just from this
-	void *buf;
-} ctrl;
 
 typedef struct {
 	char *buf;
 	size_t actual_size;
 	size_t alloc_size;
 	size_t sent_size;
-	ctrl *controller;
 } track;
-
 
 typedef struct {
 	int file;
 	int socket;
 	void *buf;
+	int buf_offset;
 	int file_size; 
 	int file_offset; 
 	int nbytes;
 } aio_transfer;
 
 /* Global Variables */
-
 // tracking
 int conns = 0;
-int unix_conns = 0;
 //eventing
 int kernel_queue;
 int nchanges = 0;
@@ -67,13 +62,12 @@ int nevents = 0;
 struct kevent event_list[MAX_EVENTS];
 struct kevent change_list[MAX_EVENTS];
 interest interest_array[MAX_FD];
-ctrl *curr_ctrl;
 // TCPing
 int listen_sd;
 int listen_usd;
 
 /* Functions */
-static void write_conn_pre_aio_helper(int fd, void *arg);
+static void write_conn_pre_aio_helper(void *arg);
 
 /* MEMORY AND ERROR FUNCTIONS */
 static void
@@ -83,19 +77,12 @@ perror_exit(const char *str)
 	exit(-1);
 }
 
-static void 
-free_ctrl(ctrl *controller) 
-{
-	free(controller->buf);
-	free(controller);
-}
-
 /* REGISTERING INTEREST */
 static void 
 register_interest(int fd, void (*func)(int, void*), void *arg, 
 					uint16_t flags, int16_t filter)
 {
-	EV_SET(&change_list[nchanges], fd, flags, filter, 0, 0, 0);
+	EV_SET(&change_list[nchanges], fd, filter, flags, 0, 0, 0);
 	interest_array[fd].func = func;
 	interest_array[fd].arg = arg;
 	nchanges++;
@@ -108,27 +95,29 @@ register_read_interest(int fd, void (*func)(int, void *), void *arg)
 }	
 
 static void 
-register_write_interest(int fd, void (*func)(int, void *), void *arg)
+register_write_interest(int fd, void (*func)(void *), void *arg)
 {
-	register_interest(fd, func, arg, (EV_ADD | EV_ONESHOT), EVFILT_WRITE);
+	EV_SET(&change_list[nchanges], fd, EVFILT_WRITE, (EV_ADD | EV_ONESHOT),  
+			0, 0, 0);
+	interest_array[fd].write_func = func; //?terrible hack
+	interest_array[fd].arg = arg;
+	nchanges++;
 }
 
 static void
 register_aio_read_interest(int fd, void *arg, int offset, int cbfd, void (*cbfunc)(void *), 
 							void *cbarg, int nbytes) 
 {
-	aiocb *aioc;
-	if (NULL == (aioc = malloc(sizeof(aiocb)))) 
+	struct aiocb *aioc;
+	if (NULL == (aioc = malloc(sizeof(struct aiocb)))) 
 		perror_exit("aciob malloc");
 	aioc->aio_fildes = fd;     
 	aioc->aio_buf = arg; //not right
-	aioc->aio_nbytes = nbytes; //this shouldn't be here???right??
+	aioc->aio_nbytes = nbytes; //?this shouldn't be here
     aioc->aio_offset = offset;     
-    aioc->aio_sigevent.notifyinfo.nifunc = cbfunc;
-    aioc->aio_sigevent.sigev_value.sigval_ptr = cbarg;
-    aioc->aio_sigevent.signo = kernel_queue;
-	aioc->aio_sigevent.sigev_notify = SIGEV_KEVENT;
-	
+	aioc->aio_sigevent.sigev_value.sigval_ptr = cbarg;
+    aioc->aio_sigevent.sigev_notify_kqueue = kernel_queue;
+	aioc->aio_sigevent.sigev_notify = SIGEV_KEVENT;	
 	aio_read(aioc);
 }
 
@@ -156,8 +145,9 @@ interpret_buf(char *read_buf)
 		while (word != NULL) {
 			if (0 == strcmp(word, "GET"))
 				bool = 1; 
-			if (bool && word[0] == '/')
-				return word;
+			if (bool && word[0] == '/') {
+				return word + 1;
+			}
 			word = strtok_r(NULL, " ", &last_word);
 		} 
 		bool = 0;
@@ -166,84 +156,78 @@ interpret_buf(char *read_buf)
 	return "UNSUPPORTED METHOD"; 
 }
 
-//took out: read_unix_conn and accept_unix_conn
-
 static void
 aio_read_buf(void *arg)
 {
 	aio_transfer *data = (aio_transfer *) arg;
-	if (0 > data->nbytes) 
-		perror_exit("File AIO read, internal error");
-	data->file_offset += data->nbytes; //here or in event loop?
-	register_write_interest(fd, aio_read_buf, arg, data->);
+	data->file_offset += data->nbytes; //?here or in event loop
+	register_write_interest(data->socket, &write_conn_pre_aio_helper, data);
 }
 	
 static void 
 write_conn_pre_aio_helper(void *arg)
 {	
 	aio_transfer *data = (aio_transfer *)arg;
-	if ((0 == (data->file_size - (data->file_offset + data->buf_size))) 
-				&& (data->buf_size == data->buf_offset)) { //file read
-		send();
-		close(socket);
-		close(file);
-		free(buf);
-		free(data); //will have leaks
+	int n;		
+	if (0 >= (data->file_size - (data->file_offset + data->nbytes))) { //file read
+		DEBUGP("FILE READ");
+		while (0 > (n = send(data->socket, data->buf+data->buf_offset, data->nbytes - data->buf_offset, 0))) {
+			data->buf_offset += n;	
+		} //?this is blocking
+		close(data->socket);
+		close(data->file);
+		free(data->buf);
+		free(data);
 	} else { //chunks
-		send();
+		while (0 > (n = send(data->socket, data->buf+data->buf_offset, data->nbytes - data->buf_offset, 0))) {
+			data->buf_offset += n;	
+		} //?this is blocking
+	    data->file_offset += data->buf_offset;
 		register_aio_read_interest(data->file, data->buf, data->file_offset, data->socket, aio_read_buf, 
 									data, data->nbytes);
 	}	
 }
 
 static void 
-read_conn_helper(int fd, void *arg) 
+read_conn(int fd, void *arg) 
 {
 	int n;
-	track *tracker = (track *) arg;
+	track *tracker = malloc(sizeof(track));
+	tracker->actual_size = 0;
+	tracker->alloc_size = BUFF_SIZE;
+	tracker->buf = malloc(BUFF_SIZE);
 	while (0 < (n = recv(fd, tracker->buf + tracker->actual_size, 
-							tracker->actual_size % BUFF_SIZE, 0))) { /* Remember you changed this */
+							tracker->alloc_size - tracker->actual_size, 0))) { /* Remember you changed this */
 		tracker->actual_size += n;
 		if (tracker->actual_size >= tracker->alloc_size) {
 			tracker->alloc_size += BUFF_SIZE;
-			void *temp = realloc(tracker->buf, 
-									tracker->alloc_size);
+			void *temp = realloc(tracker->buf, tracker->alloc_size);
 			if (temp == NULL)
 				perror_exit("REALLOC BUG");
 			tracker->buf = (char *)temp;
 		}
-	} 
+	} //? blocking
 	char *temp = interpret_buf(tracker->buf);
-	if (0 == n)  
-		perror_exit("peer dc hmm");
-	else if (EAGAIN == errno)
-		register_read_interest(fd, read_conn_helper, arg);
-	else if (!strcmp(temp, "UNSUPPORTED METHOD")) {
+	// 	if (0 == n)  
+// 		perror_exit("peer dc hmm");
+// 	else if (EAGAIN == errno)
+// 		register_read_interest(fd, read_conn, arg);
+	if (!(0 == strcmp(temp, "UNSUPPORTED METHOD"))) {
 		aio_transfer *data = malloc(sizeof(aio_transfer));
-		data->file = fopen(temp, O_RDONLY); //? does there need to be / in URI
 		data->socket = fd; 
-		data->buf_size = BUFF_SIZE;
 		data->nbytes = BUFF_SIZE;
+		data->buf_offset = 0;
 		data->buf = malloc(BUFF_SIZE);
-		data->file_size = 'system call to get filesize'; //?
+		if (0 > (data->file = open(temp, O_RDONLY)))
+			perror_exit("open() file failed");
+		struct stat *stats = malloc(sizeof(struct stat));
+		if (0 > fstat(data->file, stats))
+			perror_exit("stats() failed");
+		data->file_size = (int) stats->st_size; //?
 		data->file_offset = 0;
 		register_aio_read_interest(data->file, data->buf, data->file_offset, data->socket, aio_read_buf, 
 									data, data->nbytes);
 	} else perror_exit("recv() failed");
-}
-
-static void 
-read_conn(int fd, void *arg)
-{
-	track *tracker = malloc(sizeof(track));
-	tracker->buf = malloc(BUFF_SIZE);
-	tracker->actual_size = 0;
-	tracker->alloc_size = BUFF_SIZE;
-	tracker->sent_size = 0;
-	tracker->ctrl = curr_ctrl;//elsewhere
-	ctrl->reference_count++;//need to be done elsewhere
-	arg = (void *) tracker;
-	register_read_interest(fd, read_conn_helper, arg);
 }
 
 static void
@@ -251,7 +235,7 @@ accept_conn(int fd, void *arg)
 {
 	int accept_sd;
 	if (0 > (accept_sd = accept(fd, NULL, NULL)) && EAGAIN != errno)
-		perror_exit("UNIX accept() failed");
+		perror_exit("accept() failed");
 	else if (0 < accept_sd) {
 		register_read_interest(accept_sd, read_conn, arg);
 		conns++;	
@@ -269,7 +253,6 @@ event_loop(void)
 	if (0 > (kernel_queue = kqueue())) 
 		perror_exit("kqueue() failed");	
 	void *arg = NULL;
-	register_read_interest(listen_usd, accept_unix_conn, arg);
 	register_read_interest(listen_sd, accept_conn, arg);
 	while (1) {
 		struct kevent *event;
@@ -277,23 +260,23 @@ event_loop(void)
 										event_list, MAX_EVENTS, &time)))
 			perror_exit("kevent() failed");
 		else {
-		    nchanges = 0;
-			for (event = event_list; event < event_list+n; event++) {
+			nchanges = 0;
+			for (event = event_list; event < event_list + n; event++) {
 				if (EVFILT_READ == event->filter) {
 					(interest_array[event->ident]).func(event->ident, 
-														event->arg);
+														event->udata);
 				} else if (EVFILT_WRITE == event->filter) {
-					(interest_array[event->ident]).func(event->ident, 
-														event->arg);
+					(interest_array[event->ident]).write_func(interest_array[event->ident].arg);
 				} else if (EVFILT_AIO == event->filter) {
-					aioc = (struct aiocb *) event->ident;
-					nbytes = aio_return(iocb);
-					int ret;
-					if (0 < (ret = (interest_array[event->ident.filedes].func(event->ident.filedes,
-																		event->ident.arg))))
-						perror_exit("Error on executing callback");
-					free(aioc); //?
-				} else perror_exit("This is an odd event\n");
+					struct aiocb *aioc = (struct aiocb *) event->ident;
+					int nbytes;
+					if (0 > (nbytes = aio_return(aioc)))
+						perror_exit("aio_return() failed: ");
+					aio_read_buf(aioc->aio_sigevent.sigev_value.sigval_ptr); //? poor design choice
+					free(aioc); //? will this not free substructs, what I want
+				} else if (event->flags & EV_ERROR) {
+					perror_exit("EVENTING ERROR");
+				}
 			}
 		}
 	}
@@ -303,8 +286,6 @@ event_loop(void)
 }
 
 /* TCP LAYER */
-//removed unix serv
-
 static void 
 inet_serv(void)
 {
@@ -321,7 +302,7 @@ inet_serv(void)
 	if (0 > bind(listen_sd, (struct sockaddr *)&in_addr, sizeof(in_addr)))
 		perror_exit("bind() failed");
 	fcntl(listen_sd, F_SETFL, fcntl(listen_sd, F_GETFL, 0) | O_NONBLOCK);
-	if(0 > listen(listen_sd, 128))
+	if (0 > listen(listen_sd, 128))
 		perror_exit("listen() failed");
 	printf("The server is ready\n");
 }
