@@ -1,0 +1,31 @@
+/*******HTML *******/
+/*
+div.chart {
+	width:420px;
+}
+
+div.bar {
+	font: 10px sans-serif;
+	background-color: steelblue;
+	text-align: right;
+	padding: 3px;
+	margin: 1px;
+	color: white;
+
+}*/
+
+/******SVG ********/
+.chart rect {
+	stroke: white;
+	fill: steelblue;
+}
+
+.chart text {
+	fill: white;
+}
+
+.rule {
+	font: 10px sans-serif;
+	stroke: gray; /*? why fill doesn't work baffles me....*/
+	
+}
