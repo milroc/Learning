@@ -1,0 +1,19 @@
+{
+    // sftp or ftp
+    "type": "sftp",
+    "upload_on_save": false,
+    
+    "host": "vm10bsd0177.dev.sbr.ironport.com",
+    "user": "mmmccrock",
+    "password": "34kLo(jtu",
+    //"port": "22",
+    
+    "remote_path": "~/",
+    "ignore_regex": "(sftp-settings\\.json|\\.svn|\\.hg|\\.git|\\.bzr|_darcs|CVS|\\.DS_Store|Thumbs\\.db|desktop\\.ini)"
+    //"file_permissions": "664",
+    //"dir_permissions": "775",
+    
+    //"ftp_passive_mode": true,
+    //"ssh_key_file": "~/.ssh/id_rsa",
+    //"sftp_flags": "-F /path/to/ssh_config",
+}
